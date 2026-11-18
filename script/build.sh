@@ -10,7 +10,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# Must match the telepresence chart_version in ../resources/helm/system_packages.yml, so the CLI the app
+# Must match the telepresence chart_version in CanineHQ/canine's resources/helm/system_packages.yml, so the CLI the app
 # ships talks to the same Traffic Manager version Canine installs on clusters.
 TELEPRESENCE_VERSION=2.21.1
 

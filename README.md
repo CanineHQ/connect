@@ -1,6 +1,6 @@
 # Canine Connect
 
-A macOS menu bar app that puts your Mac on a Canine cluster's private network with one switch, using
+A macOS menu bar app that puts your Mac on a [Canine](https://github.com/CanineHQ/canine) cluster's private network with one switch, using
 [Telepresence](https://telepresence.io). Once it's connected, `http://<service>.<namespace>.svc.cluster.local`
 resolves and works from your browser, `psql`, `curl`, and so on, even for services that aren't public.
 
@@ -9,7 +9,6 @@ resolves and works from your browser, `psql`, `curl`, and so on, even for servic
 Needs macOS 13+ and the Swift toolchain (the Xcode Command Line Tools are enough):
 
 ```bash
-cd canine-connect
 script/build.sh --install   # builds, copies to ~/Applications, launches
 ```
 
@@ -46,7 +45,7 @@ Telepresence daemons.
   `GET /api/v1/clusters/:name/download_kubeconfig` to `~/Library/Application Support/Canine Connect/kubeconfigs/`
   (mode 0600). The access token is kept in the login keychain.
 - **Telepresence:** the app ships its own CLI in `Contents/Resources/bin/telepresence`, pinned to the same version
-  as the Traffic Manager chart Canine installs (`resources/helm/system_packages.yml`). It runs
+  as the Traffic Manager chart Canine installs (`resources/helm/system_packages.yml` in CanineHQ/canine). It runs
   `telepresence connect --kubeconfig <file> --manager-namespace canine-system`, and polls
   `telepresence status --output json` for the menu bar state.
 - **Root daemon:** Telepresence's root daemon has to run as root, and the CLI normally starts it with `sudo` from a
@@ -59,24 +58,24 @@ Logs are in `~/Library/Logs/telepresence` (gear menu → **Open Telepresence Log
 ## Releasing
 
 People download the app from the **Canine Connect** page in Canine (`/canine_connect`, also linked from every
-service's "Connect from your computer" dialog). Those links point at GitHub release assets built by
-`.github/workflows/canine-connect.yml`:
+service's "Connect from your computer" dialog). It links to this repo's latest release
+(`releases/latest/download/CanineConnect-macos-<arch>.zip`), so releasing needs no change in Canine:
 
-1. Bump `CFBundleShortVersionString` in `Resources/Info.plist` and `CanineConnectRelease::VERSION` in
-   `app/models/canine_connect_release.rb` to the same version (a spec checks they match).
-2. Push a tag: `git tag canine-connect-v0.1.0 && git push origin canine-connect-v0.1.0`.
+1. Bump `CFBundleShortVersionString` in `Resources/Info.plist`.
+2. Push a matching tag: `git tag v0.1.0 && git push origin v0.1.0`.
 
-The workflow builds `CanineConnect-macos-arm64.zip` and `CanineConnect-macos-x86_64.zip` (`ARCH=... script/build.sh --zip`)
-and attaches them to the `canine-connect-v<version>` release.
+`.github/workflows/release.yml` builds `CanineConnect-macos-arm64.zip` and `CanineConnect-macos-x86_64.zip`
+(`ARCH=... script/build.sh --zip`) and attaches them to that release. Keep the zip names: Canine's download links
+depend on them.
 
-The download page's screenshot is `public/images/canine_connect/connected.png`, the `connected-dark.png` output of
-`--snapshot`.
+The screenshot on Canine's download page (`public/images/canine_connect/connected.png` in CanineHQ/canine) is the
+`connected-dark.png` output of `--snapshot`.
 
 ## Bumping Telepresence
 
-Change `TELEPRESENCE_VERSION` in `script/build.sh` together with the chart version in
-`resources/helm/system_packages.yml` and the CLI version in the root `Dockerfile` and `resources/system_install.sh`.
-`spec/models/cluster_package_spec.rb` fails if they drift apart.
+The bundled CLI must match the Traffic Manager Canine installs. Change `TELEPRESENCE_VERSION` in `script/build.sh`
+together with, in CanineHQ/canine, the telepresence `chart_version` in `resources/helm/system_packages.yml` (and the
+CLI version in its `Dockerfile` and `resources/system_install.sh`).
 
 ## Limitations
 
