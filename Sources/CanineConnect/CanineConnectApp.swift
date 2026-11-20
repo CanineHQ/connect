@@ -33,7 +33,7 @@ struct CanineConnectApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var model: AppModel?
 
-    /// Receives canine-connect:// URLs (the OAuth callback). An Apple Event handler rather than SwiftUI's
+    /// Receives canine-connect:// URLs (the OAuth callback and Canine's "Open in Canine Connect" link). An Apple Event handler rather than SwiftUI's
     /// onOpenURL, which only fires while a view is on screen, and the popover is closed while you're in the browser.
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSAppleEventManager.shared().setEventHandler(
@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let url = URL(string: string) else { return }
         Task { @MainActor in
             guard let model = self.model else { return }
-            await model.handleCallback(url)
+            await model.handleLink(url)
             // Bring the result into view: the person is still looking at their browser.
             MenuBarPopover.show()
         }

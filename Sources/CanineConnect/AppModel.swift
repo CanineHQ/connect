@@ -33,6 +33,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var telepresenceVersion: String?
     @Published var errorMessage: String?
 
+    /// A Canine URL handed over by an "Open in Canine Connect" link, waiting to be put in the sign-in form.
+    @Published var suggestedBaseURL: String?
     @Published var baseURLString: String {
         didSet { defaults.set(baseURLString, forKey: "baseURL") }
     }
@@ -173,6 +175,35 @@ final class AppModel: ObservableObject {
         // see it; registering again next time costs nothing.
         if let browserSignIn { forgetClientID(for: browserSignIn.baseURL) }
         browserSignIn = nil
+    }
+
+    /// Every canine-connect:// URL the app is opened with.
+    func handleLink(_ url: URL) async {
+        guard url.scheme == OAuthClient.callbackScheme else { return }
+        if url.host == "connect" {
+            useServer(from: url)
+        } else {
+            await handleCallback(url)
+        }
+    }
+
+    /// canine-connect://connect?url=https://canine.example.com, the link on Canine's own Canine Connect page. It
+    /// saves typing the address of a self-hosted Canine. Any web page can open this link, so it only fills in the
+    /// sign-in form: the person still sees the address and chooses to sign in to it.
+    private func useServer(from link: URL) {
+        let value = URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "url" }?.value
+        guard let server = normalizedBaseURL(value ?? "") else { return }
+        if credential != nil {
+            let current = URL(string: baseURLString)
+            if current?.host != server.host || current?.port != server.port {
+                errorMessage = "You're signed in to \(current?.host ?? baseURLString). Sign out to switch to \(server.host ?? server.absoluteString)."
+            }
+            return
+        }
+        // A sign-in already waiting on the browser was for whatever address was there before.
+        if browserSignIn != nil { cancelBrowserSignIn() }
+        errorMessage = nil
+        suggestedBaseURL = server.absoluteString
     }
 
     /// The browser calling back with canine-connect://oauth/callback?code=…&state=…
