@@ -43,7 +43,9 @@ Telepresence daemons.
 - **Canine:** calls `GET /api/v1/me` and `GET /api/v1/clusters` with `Authorization: Bearer` (or `X-API-Key`
   when signed in with an API token), plus `X-Account-Id` for the selected account. On connect it downloads that cluster's kubeconfig from
   `GET /api/v1/clusters/:name/download_kubeconfig` to `~/Library/Application Support/Canine Connect/kubeconfigs/`
-  (mode 0600). The access token is kept in the login keychain.
+  (mode 0600). The access token is kept in the login keychain. Canine's kubeconfigs carry a token that expires
+  (`expires_at` in the response, a day by default), so the app fetches a fresh one on every connect and
+  reconnects with a new one shortly before a long session's token runs out.
 - **Telepresence:** the app ships its own CLI in `Contents/Resources/bin/telepresence`, pinned to the same version
   as the Traffic Manager chart Canine installs (`resources/helm/system_packages.yml` in CanineHQ/canine). It runs
   `telepresence connect --kubeconfig <file> --manager-namespace canine-system`, and polls

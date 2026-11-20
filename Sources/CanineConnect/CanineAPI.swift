@@ -89,14 +89,18 @@ struct CanineAPI {
 
     /// Returns the kubeconfig as JSON, which kubectl and telepresence parse as YAML. Slashes must stay unescaped:
     /// `\/` is valid JSON but an invalid escape in a YAML double-quoted string.
-    func kubeconfig(clusterName: String) async throws -> Data {
+    ///
+    /// Canine hands out credentials that expire (`expires_at`); nil means the ones in this kubeconfig don't.
+    func kubeconfig(clusterName: String) async throws -> (data: Data, expiresAt: Date?) {
         let name = clusterName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? clusterName
         let data = try await get("api/v1/clusters/\(name)/download_kubeconfig")
         guard
             let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             let kubeconfig = object["kubeconfig"], !(kubeconfig is NSNull)
         else { throw CanineAPIError.badResponse }
-        return try JSONSerialization.data(withJSONObject: kubeconfig, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        let expiresAt = (object["expires_at"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
+        let yaml = try JSONSerialization.data(withJSONObject: kubeconfig, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        return (yaml, expiresAt)
     }
 
     func webURL(_ path: String) -> URL {

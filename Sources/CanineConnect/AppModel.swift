@@ -57,6 +57,12 @@ final class AppModel: ObservableObject {
     let telepresence: Telepresence?
     private let defaults = UserDefaults.standard
     private var credential: CanineCredential?
+    /// When to swap the kubeconfig telepresence is using for a fresh one. Canine's kubeconfigs carry a token that
+    /// expires, and telepresence reads the file once, so a session that outlives the token has to reconnect.
+    private var kubeconfigRenewAt: Date? {
+        didSet { defaults.set(kubeconfigRenewAt, forKey: "kubeconfigRenewAt") }
+    }
+    private static let minimumRenewableLifetime: TimeInterval = 5 * 60
     private var pollTask: Task<Void, Never>?
 
     init() {
@@ -66,6 +72,7 @@ final class AppModel: ObservableObject {
         connectedClusterName = defaults.string(forKey: "connectedCluster")
         accountSlug = defaults.string(forKey: "accountSlug")
         connectedSince = defaults.object(forKey: "connectedSince") as? Date
+        kubeconfigRenewAt = defaults.object(forKey: "kubeconfigRenewAt") as? Date
         telepresence = Telepresence.locate()
         credential = Keychain.read(Self.tokenKey).map {
             CanineCredential(kind: UserDefaults.standard.string(forKey: "credentialKind"), secret: $0)
@@ -321,7 +328,15 @@ final class AppModel: ObservableObject {
         errorMessage = nil
         do {
             connection = .connecting("Fetching kubeconfig…")
-            let kubeconfig = try writeKubeconfig(try await api.kubeconfig(clusterName: cluster.name), for: cluster)
+            let fetched = try await api.kubeconfig(clusterName: cluster.name)
+            let kubeconfig = try writeKubeconfig(fetched.data, for: cluster)
+            // Renew with a tenth of the lifetime to spare, whatever lifetime the cluster actually granted. A token
+            // that already looks expired or nearly so means this Mac's clock disagrees with Canine's; scheduling a
+            // renewal from it would reconnect in a loop, so leave the session alone instead.
+            let renewAt = fetched.expiresAt.flatMap { expiry -> Date? in
+                let lifetime = expiry.timeIntervalSinceNow
+                return lifetime > Self.minimumRenewableLifetime ? Date().addingTimeInterval(lifetime * 0.9) : nil
+            }
 
             if status?.isConnected == true {
                 connection = .connecting("Leaving \(connectedClusterName ?? "current cluster")…")
@@ -337,8 +352,10 @@ final class AppModel: ObservableObject {
             try await telepresence.connect(kubeconfig: kubeconfig, managerNamespace: managerNamespace)
             connectedClusterName = cluster.name
             connectedSince = Date()
+            kubeconfigRenewAt = renewAt
             connection = .connected
         } catch {
+            kubeconfigRenewAt = nil
             connection = .disconnected
             handle(error)
         }
@@ -351,6 +368,7 @@ final class AppModel: ObservableObject {
         await telepresence.quit()
         connectedClusterName = nil
         connectedSince = nil
+        kubeconfigRenewAt = nil
         connection = .disconnected
         await refreshStatus(force: true)
     }
@@ -373,8 +391,13 @@ final class AppModel: ObservableObject {
         if !connected {
             connectedSince = nil
             connectedClusterName = nil
+            kubeconfigRenewAt = nil
         }
         connection = connected ? .connected : .disconnected
+        // Not on a forced refresh: that is connect() and disconnect() reporting their own result.
+        if connected, !force, let renewAt = kubeconfigRenewAt, renewAt <= Date() {
+            await connect()
+        }
     }
 
     private func loadTelepresenceVersion() async {
