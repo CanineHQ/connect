@@ -113,6 +113,7 @@ private struct Avatar: View {
 
 private struct SettingsMenu: View {
     @EnvironmentObject private var model: AppModel
+    @AppStorage(ConnectionDetails.visibilityKey) private var showsConnectionDetails = false
 
     var body: some View {
         Menu {
@@ -137,6 +138,7 @@ private struct SettingsMenu: View {
                 get: { model.launchesAtLogin },
                 set: { model.setLaunchesAtLogin($0) }
             ))
+            Toggle("Show Connection Details", isOn: $showsConnectionDetails)
             Button("Open Telepresence Logs") {
                 model.open(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/telepresence"))
             }
@@ -506,25 +508,34 @@ private struct MissingTelepresenceNote: View {
 
 // MARK: - Connection details
 
+/// What to do once connected: the address pattern for reaching a service. The context, API server and Traffic
+/// Manager rows are for debugging, so they stay hidden until "Show Connection Details" is turned on in the menu.
 private struct ConnectionDetails: View {
+    static let visibilityKey = "showsConnectionDetails"
+
     let status: TelepresenceStatus.UserDaemon
     let version: String?
+    @AppStorage(ConnectionDetails.visibilityKey) private var showsDetails = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SectionLabel("Connection")
-                .padding(.horizontal, 4)
+            if showsDetails {
+                SectionLabel("Connection")
+                    .padding(.horizontal, 4)
+            }
             VStack(alignment: .leading, spacing: 0) {
-                if let context = status.kubernetesContext { row("Context", context) }
-                if let server = status.kubernetesServer {
+                if showsDetails {
+                    if let context = status.kubernetesContext { row("Context", context) }
+                    if let server = status.kubernetesServer {
+                        Divider().padding(.leading, 10)
+                        row("API server", server.replacingOccurrences(of: "https://", with: ""))
+                    }
+                    if let ns = status.managerNamespace {
+                        Divider().padding(.leading, 10)
+                        row("Traffic manager", [ns, version].compactMap { $0 }.joined(separator: " · "))
+                    }
                     Divider().padding(.leading, 10)
-                    row("API server", server.replacingOccurrences(of: "https://", with: ""))
                 }
-                if let ns = status.managerNamespace {
-                    Divider().padding(.leading, 10)
-                    row("Traffic manager", [ns, version].compactMap { $0 }.joined(separator: " · "))
-                }
-                Divider().padding(.leading, 10)
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Reach any service by its cluster address")
                         .font(.system(size: 11))
