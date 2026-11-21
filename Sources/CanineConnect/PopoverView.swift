@@ -602,7 +602,10 @@ private struct SignInView: View {
                 form
             }
         }
-        .onAppear { if baseURL.isEmpty { baseURL = model.baseURLString } }
+        .onAppear { baseURL = model.suggestedBaseURL ?? (baseURL.isEmpty ? model.baseURLString : baseURL) }
+        .onChange(of: model.suggestedBaseURL) { suggested in
+            if let suggested { baseURL = suggested }
+        }
     }
 
     private var form: some View {
