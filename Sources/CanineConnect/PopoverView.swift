@@ -26,16 +26,13 @@ struct PopoverView: View {
                     .padding(.horizontal, 14)
                     .padding(.bottom, 14)
             }
-            if model.isSignedIn {
-                Footer()
-            }
         }
         .frame(width: 360)
         .tint(Brand.accent)
     }
 }
 
-// MARK: - Header & footer
+// MARK: - Header
 
 private struct Header: View {
     @EnvironmentObject private var model: AppModel
@@ -66,51 +63,6 @@ private struct Header: View {
     }
 }
 
-private struct Footer: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-            HStack(spacing: 8) {
-                if let me = model.me {
-                    Avatar(text: me.name ?? me.email)
-                    Text(me.email)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer()
-                if let api = model.api {
-                    Button {
-                        model.open(api.webURL("/"))
-                    } label: {
-                        Label("Open Canine", systemImage: "arrow.up.right")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .buttonStyle(.borderless)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-        }
-        .background(Color.primary.opacity(0.03))
-    }
-}
-
-private struct Avatar: View {
-    let text: String
-
-    var body: some View {
-        Text(String(text.prefix(1)).uppercased())
-            .font(.system(size: 10, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: 20, height: 20)
-            .background(Circle().fill(Brand.accent.gradient))
-    }
-}
-
 private struct SettingsMenu: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage(ConnectionDetails.visibilityKey) private var showsConnectionDetails = false
@@ -118,6 +70,11 @@ private struct SettingsMenu: View {
     var body: some View {
         Menu {
             if let me = model.me {
+                Text(me.email)
+                if let api = model.api {
+                    Button("Open Canine") { model.open(api.webURL("/")) }
+                }
+                Divider()
                 if me.accounts.count > 1 {
                     Picker("Account", selection: Binding(
                         get: { model.currentAccount?.slug ?? "" },
@@ -191,8 +148,7 @@ private struct Hero: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            StatusPill(connection: model.connection)
+        VStack(spacing: 14) {
             BigSwitch(isOn: isOn, isBusy: model.connection.isBusy, onColoredBackground: model.isConnected) {
                 Task { await model.toggle() }
             }
@@ -262,43 +218,6 @@ private struct Hero: View {
     }
 }
 
-private struct StatusPill: View {
-    let connection: AppModel.Connection
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 7, height: 7)
-                .shadow(color: dotColor.opacity(connection == .connected ? 0.9 : 0), radius: 3)
-            Text(label)
-                .font(.system(size: 10, weight: .bold))
-                .tracking(0.8)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
-        .foregroundStyle(connection == .connected ? Color.white : Color.secondary)
-        .background(Capsule().fill(connection == .connected ? Color.white.opacity(0.2) : Color.primary.opacity(0.07)))
-    }
-
-    private var label: String {
-        switch connection {
-        case .connected: return "CONNECTED"
-        case .connecting: return "CONNECTING"
-        case .disconnecting: return "DISCONNECTING"
-        case .disconnected: return "DISCONNECTED"
-        }
-    }
-
-    private var dotColor: Color {
-        switch connection {
-        case .connected: return .white
-        case .connecting, .disconnecting: return .orange
-        case .disconnected: return .secondary.opacity(0.6)
-        }
-    }
-}
-
 /// One big switch is the whole point of the app.
 private struct BigSwitch: View {
     let isOn: Bool
@@ -354,24 +273,6 @@ private struct ClusterList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                SectionLabel("Clusters")
-                Spacer()
-                Button {
-                    Task { await model.refreshClusters() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 10, weight: .semibold))
-                        .rotationEffect(.degrees(model.isLoadingClusters ? 360 : 0))
-                        .animation(model.isLoadingClusters ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default,
-                                   value: model.isLoadingClusters)
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.secondary)
-                .help("Refresh clusters")
-            }
-            .padding(.horizontal, 4)
-
             if model.clusters.isEmpty {
                 Text(model.isLoadingClusters ? "Loading clusters…" : "No clusters in this account yet.")
                     .font(.system(size: 12))
@@ -379,7 +280,7 @@ private struct ClusterList: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
                     .background(Card())
-            } else {
+            } else if model.clusters.count > 1 {
                 ScrollView {
                     VStack(spacing: 2) {
                         ForEach(model.clusters) { cluster in
