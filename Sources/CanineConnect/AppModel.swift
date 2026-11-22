@@ -18,6 +18,14 @@ final class AppModel: ObservableObject {
         }
     }
 
+    enum UpdateState: Equatable {
+        case none
+        case available(AppUpdate)
+        case installing(AppUpdate)
+        /// The answer to a check the person asked for; a scheduled check that finds nothing says nothing.
+        case upToDate
+    }
+
     static let defaultBaseURL = "https://canine.sh"
     static let defaultManagerNamespace = "canine-system"
     private static let tokenKey = "api-token"
@@ -32,6 +40,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var isLoadingClusters = false
     @Published private(set) var telepresenceVersion: String?
     @Published var errorMessage: String?
+    @Published private(set) var update: UpdateState = .none
 
     /// A Canine URL handed over by an "Open in Canine Connect" link, waiting to be put in the sign-in form.
     @Published var suggestedBaseURL: String?
@@ -66,6 +75,8 @@ final class AppModel: ObservableObject {
     }
     private static let minimumRenewableLifetime: TimeInterval = 5 * 60
     private var pollTask: Task<Void, Never>?
+    private var updateTask: Task<Void, Never>?
+    private static let updateCheckInterval: UInt64 = 24 * 60 * 60 * 1_000_000_000
 
     init() {
         baseURLString = defaults.string(forKey: "baseURL") ?? Self.defaultBaseURL
@@ -88,10 +99,20 @@ final class AppModel: ObservableObject {
             }
         }
         if credential != nil { Task { await loadAccount() } }
+        if Updater.currentVersion != nil {
+            updateTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    await self?.checkForUpdate()
+                    try? await Task.sleep(nanoseconds: Self.updateCheckInterval)
+                }
+            }
+        }
     }
 
     /// A model with canned state and no side effects, for `--snapshot` renders.
-    init(preview connection: Connection, signedIn: Bool = true, awaitingBrowser: Bool = false, error: String? = nil) {
+    init(preview connection: Connection, signedIn: Bool = true, awaitingBrowser: Bool = false, error: String? = nil,
+         update: UpdateState = .none) {
+        self.update = update
         let account = CanineAccount(id: 1, name: "Acme Inc", slug: "acme")
         let pkgs = [CanineCluster.Package(name: "telepresence", status: "installed")]
         baseURLString = Self.defaultBaseURL
@@ -407,6 +428,7 @@ final class AppModel: ObservableObject {
     /// Called when the app quits: tear down the tunnel and the root daemon so nothing privileged lingers.
     func shutdown() async {
         pollTask?.cancel()
+        updateTask?.cancel()
         guard let telepresence else { return }
         if status?.isConnected == true || Telepresence.rootDaemonReachable() {
             await telepresence.quit(stopDaemons: true)
@@ -455,6 +477,48 @@ final class AppModel: ObservableObject {
             clusters = []
         }
         errorMessage = error.localizedDescription
+    }
+
+    // MARK: - Updates
+
+    /// `manual` is the menu's Check for Updates: it reports "up to date" and failures. The daily check stays quiet.
+    func checkForUpdate(manual: Bool = false) async {
+        if case .installing = update { return }
+        do {
+            if let found = try await Updater.latest() {
+                update = .available(found)
+            } else {
+                update = manual ? .upToDate : .none
+            }
+        } catch {
+            if manual { errorMessage = error.localizedDescription }
+        }
+    }
+
+    func dismissUpdateNotice() {
+        if update == .upToDate { update = .none }
+    }
+
+    /// Downloads the update while the tunnel stays up, then drops the tunnel, swaps the app and opens the new one.
+    func installUpdate() async {
+        guard case .available(let found) = update else { return }
+        update = .installing(found)
+        errorMessage = nil
+        do {
+            let staged = try await Updater.stage(found)
+            // The root daemon runs out of this bundle; stop it before the files under it change.
+            if let telepresence, status?.isConnected == true || Telepresence.rootDaemonReachable() {
+                connection = .disconnecting
+                await telepresence.quit(stopDaemons: true)
+                await refreshStatus(force: true)
+            }
+            try Updater.replace(with: staged)
+            Updater.relaunchAfterExit()
+            NSApp.terminate(nil)
+        } catch {
+            update = .available(found)
+            errorMessage = error.localizedDescription
+        }
     }
 
     // MARK: - Launch at login

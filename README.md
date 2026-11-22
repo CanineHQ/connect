@@ -58,7 +58,14 @@ Telepresence daemons.
   standard macOS administrator prompt. After that, `telepresence connect` needs no privileges.
 - Clusters whose `telepresence` package isn't installed get a warning that links to the cluster in Canine.
 
-Logs are in `~/Library/Logs/telepresence` (gear menu → **Open Telepresence Logs**).
+- **Updates:** on launch and once a day the app asks GitHub for this repo's latest release. When that is newer, the
+  popover offers it; clicking **Update** downloads the zip for this Mac's architecture, checks it against the
+  SHA-256 GitHub recorded for the file, disconnects, replaces the app where it is installed and reopens it.
+  **Check for Updates** in the ••• menu checks on demand, and `"Canine Connect.app/Contents/MacOS/CanineConnect" --update`
+  does the same from a script. The app is ad-hoc signed, so an update is trusted because GitHub served it as a
+  release of this repository: whoever can publish a release here can update every installed copy.
+
+Logs are in `~/Library/Logs/telepresence` (••• menu → **Open Telepresence Logs**).
 
 ## Releasing
 
@@ -71,7 +78,7 @@ service's "Connect from your computer" dialog). It links to this repo's latest r
 
 `.github/workflows/release.yml` builds `CanineConnect-macos-arm64.zip` and `CanineConnect-macos-x86_64.zip`
 (`ARCH=... script/build.sh --zip`) and attaches them to that release. Keep the zip names: Canine's download links
-depend on them.
+and the app's own updater depend on them. Installed copies offer the new version within a day.
 
 The screenshot on Canine's download page (`public/images/canine_connect/connected.png` in CanineHQ/canine) is the
 `connected-dark.png` output of `--snapshot`.
@@ -85,8 +92,9 @@ CLI version in its `Dockerfile` and `resources/system_install.sh`).
 ## Limitations
 
 - The app is ad-hoc signed, not notarized. A browser download is quarantined, so macOS asks people to approve it
-  under System Settings → Privacy & Security → Open Anyway. The `curl` install command on the download page avoids
-  that. A Developer ID signature and notarization would remove the step.
+  under System Settings → Privacy & Security → Open Anyway. Updates the app installs itself aren't quarantined, so
+  that happens once. A Developer ID signature and notarization would remove the step, and would give updates a
+  publisher signature to check.
 - Releases are per-architecture (Apple Silicon and Intel), not a universal binary.
 - A kubeconfig that authenticates through an exec plugin (`aws`, `gcloud`, `doctl`) needs that tool in
   `/opt/homebrew/bin`, `/usr/local/bin` or the system paths.
