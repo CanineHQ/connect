@@ -25,7 +25,7 @@ swift build && .build/debug/CanineConnect --snapshot /tmp/canine-connect-snapsho
 
 1. Click the Canine dog in the menu bar.
 2. Check the Canine URL and click **Sign In with Canine**. Approve Canine Connect in your browser and the app
-   signs in. (**Use an API token instead** works too, e.g. without a browser or against an older Canine.)
+   signs in.
 3. Choose a cluster and flip the switch. The first time, macOS asks for your password so Telepresence's
    network daemon can create the tunnel.
 
@@ -43,8 +43,7 @@ Telepresence daemons.
 - **Open from Canine:** Canine's Canine Connect page links to `canine-connect://connect?url=<that Canine's URL>`.
   The app puts the address in its sign-in form, so nobody has to type the URL of a self-hosted Canine. It never
   signs in by itself: any web page can open that link, so the person still sees the address and clicks Sign In.
-- **Canine:** calls `GET /api/v1/me` and `GET /api/v1/clusters` with `Authorization: Bearer` (or `X-API-Key`
-  when signed in with an API token), plus `X-Account-Id` for the selected account. On connect it downloads that cluster's kubeconfig from
+- **Canine:** calls `GET /api/v1/me` and `GET /api/v1/clusters` with `Authorization: Bearer`, plus `X-Account-Id` for the selected account. On connect it downloads that cluster's kubeconfig from
   `GET /api/v1/clusters/:name/download_kubeconfig` to `~/Library/Application Support/Canine Connect/kubeconfigs/`
   (mode 0600). The access token is kept in the login keychain. Canine's kubeconfigs carry a token that expires
   (`expires_at` in the response, a day by default), so the app fetches a fresh one on every connect and

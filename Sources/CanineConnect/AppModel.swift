@@ -67,7 +67,7 @@ final class AppModel: ObservableObject {
 
     let telepresence: Telepresence?
     private let defaults = UserDefaults.standard
-    private var credential: CanineCredential?
+    private var accessToken: String?
     /// When to swap the kubeconfig telepresence is using for a fresh one. Canine's kubeconfigs carry a token that
     /// expires, and telepresence reads the file once, so a session that outlives the token has to reconnect.
     private var kubeconfigRenewAt: Date? {
@@ -87,8 +87,12 @@ final class AppModel: ObservableObject {
         connectedSince = defaults.object(forKey: "connectedSince") as? Date
         kubeconfigRenewAt = defaults.object(forKey: "kubeconfigRenewAt") as? Date
         telepresence = Telepresence.locate()
-        credential = Keychain.read(Self.tokenKey).map {
-            CanineCredential(kind: UserDefaults.standard.string(forKey: "credentialKind"), secret: $0)
+        // Earlier versions could also sign in with a pasted API token. One of those can't be used as an access
+        // token, so it is dropped here and the person signs in through the browser.
+        if defaults.string(forKey: "credentialKind") == "oauth" {
+            accessToken = Keychain.read(Self.tokenKey)
+        } else {
+            Keychain.delete(Self.tokenKey)
         }
 
         pollTask = Task { [weak self] in
@@ -98,7 +102,7 @@ final class AppModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
             }
         }
-        if credential != nil { Task { await loadAccount() } }
+        if accessToken != nil { Task { await loadAccount() } }
         if Updater.currentVersion != nil {
             updateTask = Task { [weak self] in
                 while !Task.isCancelled {
@@ -125,7 +129,7 @@ final class AppModel: ObservableObject {
             browserSignIn = OAuthClient(baseURL: url).begin(clientID: "preview")
         }
         guard signedIn else { return }
-        credential = .oauth("preview")
+        accessToken = "preview"
         accountSlug = "acme"
         me = CanineMe(email: "you@example.com", name: "You", currentAccount: account, accounts: [account])
         clusters = [
@@ -150,12 +154,12 @@ final class AppModel: ObservableObject {
     // MARK: - Derived state
 
     var isSignedIn: Bool { me != nil }
-    var hasToken: Bool { credential != nil }
+    var hasToken: Bool { accessToken != nil }
     var isConnected: Bool { connection == .connected }
 
     var api: CanineAPI? {
-        guard let credential, let url = URL(string: baseURLString) else { return nil }
-        return CanineAPI(baseURL: url, credential: credential, accountSlug: accountSlug)
+        guard let accessToken, let url = URL(string: baseURLString) else { return nil }
+        return CanineAPI(baseURL: url, accessToken: accessToken, accountSlug: accountSlug)
     }
 
     var currentAccount: CanineAccount? {
@@ -214,7 +218,7 @@ final class AppModel: ObservableObject {
     private func useServer(from link: URL) {
         let value = URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "url" }?.value
         guard let server = normalizedBaseURL(value ?? "") else { return }
-        if credential != nil {
+        if accessToken != nil {
             let current = URL(string: baseURLString)
             if current?.host != server.host || current?.port != server.port {
                 errorMessage = "You're signed in to \(current?.host ?? baseURLString). Sign out to switch to \(server.host ?? server.absoluteString)."
@@ -240,10 +244,7 @@ final class AppModel: ObservableObject {
             let code = try OAuthClient.code(from: url, attempt: attempt)
             let token = try await OAuthClient(baseURL: attempt.baseURL).exchange(code: code, attempt: attempt)
             browserSignIn = nil
-            await finishSignIn(baseURL: attempt.baseURL, credential: .oauth(token)) {
-                // Signed in with OAuth but the API still wants an API key: Canine is older than this app
-                OAuthError.unsupported
-            }
+            await finishSignIn(baseURL: attempt.baseURL, accessToken: token)
         } catch {
             if case OAuthError.stateMismatch = error { errorMessage = error.localizedDescription; return }
             browserSignIn = nil
@@ -251,32 +252,20 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func signIn(baseURL: String, token newToken: String) async {
-        guard let url = normalizedBaseURL(baseURL) else { return }
-        let trimmedToken = newToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedToken.isEmpty else {
-            errorMessage = "Paste an API token from Canine."
-            return
-        }
-        isSigningIn = true
-        defer { isSigningIn = false }
-        await finishSignIn(baseURL: url, credential: .apiKey(trimmedToken))
-    }
-
-    private func finishSignIn(baseURL url: URL, credential newCredential: CanineCredential,
-                              whenUnauthorized: (() -> Error)? = nil) async {
+    private func finishSignIn(baseURL url: URL, accessToken newToken: String) async {
         errorMessage = nil
         do {
-            let me = try await CanineAPI(baseURL: url, credential: newCredential).me()
-            Keychain.write(newCredential.secret, for: Self.tokenKey)
-            defaults.set(newCredential.kind, forKey: "credentialKind")
-            credential = newCredential
+            let me = try await CanineAPI(baseURL: url, accessToken: newToken).me()
+            Keychain.write(newToken, for: Self.tokenKey)
+            defaults.set("oauth", forKey: "credentialKind")
+            accessToken = newToken
             baseURLString = url.absoluteString
             accountSlug = me.currentAccount.slug
             self.me = me
             await refreshClusters()
-        } catch CanineAPIError.unauthorized where whenUnauthorized != nil {
-            errorMessage = whenUnauthorized?().localizedDescription
+        } catch CanineAPIError.unauthorized {
+            // Signed in, but the API doesn't take the access token: this Canine is older than the app.
+            errorMessage = OAuthError.unsupported.localizedDescription
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -284,11 +273,11 @@ final class AppModel: ObservableObject {
 
     func signOut() async {
         if isConnected { await disconnect() }
-        if case .oauth(let token) = credential, let url = URL(string: baseURLString) {
+        if let token = accessToken, let url = URL(string: baseURLString) {
             await OAuthClient(baseURL: url).revoke(token: token, clientID: clientIDs[baseURLString])
         }
         Keychain.delete(Self.tokenKey)
-        credential = nil
+        accessToken = nil
         me = nil
         clusters = []
         accountSlug = nil
@@ -472,7 +461,7 @@ final class AppModel: ObservableObject {
     private func handle(_ error: Error) {
         if case CanineAPIError.unauthorized = error {
             Keychain.delete(Self.tokenKey)
-            credential = nil
+            accessToken = nil
             me = nil
             clusters = []
         }

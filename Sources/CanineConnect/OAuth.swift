@@ -11,7 +11,7 @@ enum OAuthError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unsupported:
-            return "This Canine doesn't support signing in from the app yet. Use an API token instead."
+            return "This Canine is too old to sign in from the app. Update Canine, then try again."
         case .denied(let description):
             return description ?? "Sign-in was cancelled in the browser."
         case .stateMismatch:
