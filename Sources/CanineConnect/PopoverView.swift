@@ -513,8 +513,6 @@ private struct CopyableAddress: View {
 private struct SignInView: View {
     @EnvironmentObject private var model: AppModel
     @State private var baseURL = ""
-    @State private var token = ""
-    @State private var usesAPIToken = false
 
     var body: some View {
         Group {
@@ -547,53 +545,22 @@ private struct SignInView: View {
             }
             .padding(.top, 6)
 
-            VStack(alignment: .leading, spacing: 12) {
-                Field(label: "Canine URL") {
-                    TextField("https://canine.sh", text: $baseURL)
-                        .onSubmit { if !usesAPIToken { signInWithBrowser() } }
-                }
-                if usesAPIToken {
-                    Field(label: "API token") {
-                        SecureField("Paste your API token", text: $token)
-                            .onSubmit(signInWithToken)
-                    }
-                }
+            Field(label: "Canine URL") {
+                TextField("https://canine.sh", text: $baseURL)
+                    .onSubmit(signInWithBrowser)
             }
 
             VStack(spacing: 10) {
-                if usesAPIToken {
-                    Button(action: signInWithToken) {
-                        ButtonLabel(title: "Sign In with Token", isBusy: model.isSigningIn)
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(model.isSigningIn)
-
-                    HStack(spacing: 12) {
-                        Button("Create a token in Canine") {
-                            if let url = URL(string: base)?.appendingPathComponent("api_tokens/new") { model.open(url) }
-                        }
-                        Text("·").foregroundStyle(.tertiary)
-                        Button("Sign in with browser") { usesAPIToken = false }
-                    }
-                    .buttonStyle(.link)
-                    .font(.system(size: 11))
-                } else {
-                    Button(action: signInWithBrowser) {
-                        ButtonLabel(title: "Sign In with Canine", systemImage: "safari", isBusy: model.isSigningIn)
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(model.isSigningIn)
-
-                    Text("Opens Canine in your browser to approve this Mac.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-
-                    Button("Use an API token instead") { usesAPIToken = true }
-                        .buttonStyle(.link)
-                        .font(.system(size: 11))
+                Button(action: signInWithBrowser) {
+                    ButtonLabel(title: "Sign In with Canine", systemImage: "safari", isBusy: model.isSigningIn)
                 }
+                .buttonStyle(PrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
+                .disabled(model.isSigningIn)
+
+                Text("Opens Canine in your browser to approve this Mac.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -602,10 +569,6 @@ private struct SignInView: View {
 
     private func signInWithBrowser() {
         Task { await model.signInWithBrowser(baseURL: base) }
-    }
-
-    private func signInWithToken() {
-        Task { await model.signIn(baseURL: base, token: token) }
     }
 }
 

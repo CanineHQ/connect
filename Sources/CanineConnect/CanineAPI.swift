@@ -33,31 +33,6 @@ struct CanineCluster: Decodable, Identifiable, Hashable {
     }
 }
 
-/// How the app proves who it is to Canine's /api/v1.
-enum CanineCredential: Equatable {
-    /// From browser sign-in (OAuth), sent as `Authorization: Bearer`.
-    case oauth(String)
-    /// Pasted from Settings → API Tokens, sent as `X-API-Key`.
-    case apiKey(String)
-
-    var secret: String {
-        switch self {
-        case .oauth(let token), .apiKey(let token): return token
-        }
-    }
-
-    var kind: String {
-        switch self {
-        case .oauth: return "oauth"
-        case .apiKey: return "apiKey"
-        }
-    }
-
-    init(kind: String?, secret: String) {
-        self = kind == "oauth" ? .oauth(secret) : .apiKey(secret)
-    }
-}
-
 enum CanineAPIError: LocalizedError {
     case unauthorized
     case http(Int, String)
@@ -72,10 +47,10 @@ enum CanineAPIError: LocalizedError {
     }
 }
 
-/// Talks to Canine's /api/v1 with an OAuth access token or an API token.
+/// Talks to Canine's /api/v1 with the OAuth access token from browser sign-in.
 struct CanineAPI {
     let baseURL: URL
-    let credential: CanineCredential
+    let accessToken: String
     var accountSlug: String?
 
     func me() async throws -> CanineMe {
@@ -109,10 +84,7 @@ struct CanineAPI {
 
     private func get(_ path: String) async throws -> Data {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
-        switch credential {
-        case .oauth(let token): request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        case .apiKey(let token): request.setValue(token, forHTTPHeaderField: "X-API-Key")
-        }
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let accountSlug { request.setValue(accountSlug, forHTTPHeaderField: "X-Account-Id") }
         request.timeoutInterval = 30

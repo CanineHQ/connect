@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// Stores the Canine API token in the login keychain rather than in preferences.
+/// Stores the Canine access token in the login keychain rather than in preferences.
 enum Keychain {
     private static let service = "sh.canine.connect"
 
