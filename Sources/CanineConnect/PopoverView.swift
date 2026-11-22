@@ -7,6 +7,11 @@ struct PopoverView: View {
     var body: some View {
         VStack(spacing: 0) {
             Header()
+            if model.update != .none {
+                UpdateBanner()
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 12)
+            }
             if model.isSignedIn {
                 ConnectView()
                     .padding(.horizontal, 14)
@@ -101,6 +106,11 @@ private struct SettingsMenu: View {
             }
             if let version = model.telepresenceVersion {
                 Text("Telepresence \(version)")
+            }
+            if let version = Updater.currentVersion {
+                Divider()
+                Text("Canine Connect \(version)")
+                Button("Check for Updates") { Task { await model.checkForUpdate(manual: true) } }
             }
             Divider()
             if model.isSignedIn {
@@ -738,6 +748,51 @@ private struct Card: View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(Color.primary.opacity(0.04))
             .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(Color.primary.opacity(0.07)))
+    }
+}
+
+/// A new version to install, its progress, or the answer to Check for Updates.
+private struct UpdateBanner: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            switch model.update {
+            case .available(let update):
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundStyle(Brand.accent)
+                Text("Version \(update.version) is available")
+                Spacer(minLength: 0)
+                Button("Update") { Task { await model.installUpdate() } }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+            case .installing(let update):
+                ProgressView()
+                    .controlSize(.small)
+                Text("Updating to \(update.version)…")
+                Spacer(minLength: 0)
+            case .upToDate:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Brand.connected)
+                Text("Canine Connect is up to date")
+                Spacer(minLength: 0)
+                Button(action: model.dismissUpdateNotice) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+            case .none:
+                EmptyView()
+            }
+        }
+        .font(.system(size: 11.5))
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Brand.accent.opacity(0.1))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Brand.accent.opacity(0.2)))
+        )
     }
 }
 

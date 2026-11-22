@@ -7,9 +7,32 @@ enum Entry {
         if let index = CommandLine.arguments.firstIndex(of: "--snapshot") {
             let dir = CommandLine.arguments.dropFirst(index + 1).first ?? "snapshots"
             MainActor.assumeIsolated { Snapshot.run(into: URL(fileURLWithPath: dir)) }
+        } else if CommandLine.arguments.contains("--update") {
+            updateFromCommandLine()
         } else {
             CanineConnectApp.main()
         }
+    }
+
+    /// `CanineConnect --update` installs the latest release without the menu bar, for scripts and managed Macs.
+    /// It replaces the app on disk and leaves a running copy alone, which picks the new version up when reopened.
+    private static func updateFromCommandLine() -> Never {
+        Task {
+            do {
+                guard let update = try await Updater.latest() else {
+                    print("Canine Connect \(Updater.currentVersion ?? "") is up to date.")
+                    exit(0)
+                }
+                print("Downloading Canine Connect \(update.version)…")
+                try Updater.replace(with: try await Updater.stage(update))
+                print("Updated to Canine Connect \(update.version).")
+                exit(0)
+            } catch {
+                FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
+                exit(1)
+            }
+        }
+        dispatchMain()
     }
 }
 
@@ -175,6 +198,10 @@ enum Snapshot {
             ("disconnected", AppModel(preview: .disconnected)),
             ("connecting", AppModel(preview: .connecting("Connecting to production…"))),
             ("connected", AppModel(preview: .connected)),
+            ("update-available", AppModel(preview: .connected, update: .available(
+                AppUpdate(version: "0.2.0", download: Updater.releasesPage, sha256: "")))),
+            ("updating", AppModel(preview: .disconnected, update: .installing(
+                AppUpdate(version: "0.2.0", download: Updater.releasesPage, sha256: "")))),
             ("error", AppModel(preview: .disconnected, error: "Telepresence needs administrator access to create the network tunnel."))
         ]
 
