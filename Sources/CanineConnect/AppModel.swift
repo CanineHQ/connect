@@ -41,6 +41,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var telepresenceVersion: String?
     @Published var errorMessage: String?
     @Published private(set) var update: UpdateState = .none
+    @Published private(set) var isQuitting = false
+    /// Set once `shutdown()` has finished, so terminating doesn't run it again.
+    private(set) var hasShutDown = false
 
     /// A Canine URL handed over by an "Open in Canine Connect" link, waiting to be put in the sign-in form.
     @Published var suggestedBaseURL: String?
@@ -414,12 +417,31 @@ final class AppModel: ObservableObject {
         await refreshStatus(force: true)
     }
 
-    /// Called when the app quits: tear down the tunnel and the root daemon so nothing privileged lingers.
+    /// The menu's Quit. It shuts down first and only then asks AppKit to terminate, so quitting never waits inside
+    /// AppKit's terminate-later state, and the popover shows the tunnel going down in the meantime.
+    func quit() async {
+        guard !isQuitting else { return }
+        isQuitting = true
+        if isConnected { connection = .disconnecting }
+        await shutdown()
+        NSApp.terminate(nil)
+    }
+
+    /// Called when the app quits: tear down the tunnel and telepresence's daemons so nothing lingers.
     func shutdown() async {
+        guard !hasShutDown else { return }
         pollTask?.cancel()
         updateTask?.cancel()
+        await stopDaemons()
+        hasShutDown = true
+    }
+
+    /// Stops the root daemon and the user daemon. The user daemon starts with the first `telepresence status` and
+    /// keeps running out of this bundle whether or not there has been a connection.
+    private func stopDaemons() async {
         guard let telepresence else { return }
-        if status?.isConnected == true || Telepresence.rootDaemonReachable() {
+        let latest = await telepresence.status()
+        if latest?.userDaemon?.running == true || latest?.isConnected == true || Telepresence.rootDaemonReachable() {
             await telepresence.quit(stopDaemons: true)
         }
     }
@@ -495,12 +517,10 @@ final class AppModel: ObservableObject {
         errorMessage = nil
         do {
             let staged = try await Updater.stage(found)
-            // The root daemon runs out of this bundle; stop it before the files under it change.
-            if let telepresence, status?.isConnected == true || Telepresence.rootDaemonReachable() {
-                connection = .disconnecting
-                await telepresence.quit(stopDaemons: true)
-                await refreshStatus(force: true)
-            }
+            // Telepresence's daemons run out of this bundle; stop them before the files under it change.
+            if isConnected { connection = .disconnecting }
+            await stopDaemons()
+            await refreshStatus(force: true)
             try Updater.replace(with: staged)
             Updater.relaunchAfterExit()
             NSApp.terminate(nil)
