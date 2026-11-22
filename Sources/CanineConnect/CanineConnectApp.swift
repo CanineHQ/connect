@@ -79,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let model else { return .terminateNow }
+        guard let model, !model.hasShutDown else { return .terminateNow }
         Task { @MainActor in
             await model.shutdown()
             sender.reply(toApplicationShouldTerminate: true)

@@ -116,7 +116,7 @@ private struct SettingsMenu: View {
             if model.isSignedIn {
                 Button("Sign Out") { Task { await model.signOut() } }
             }
-            Button("Quit Canine Connect") { NSApp.terminate(nil) }
+            Button("Quit Canine Connect") { Task { await model.quit() } }
                 .keyboardShortcut("q")
         } label: {
             Image(systemName: "ellipsis.circle")
